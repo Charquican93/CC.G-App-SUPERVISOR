@@ -24,13 +24,17 @@ const db = mysql.createConnection({
   port: process.env.DB_PORT || process.env.MYSQLPORT || 3306
 });
 
+let dbStatus = 'Desconectada 🔴';
+
 db.connect((err) => {
   if (err) {
     console.error('Error connecting to MySQL:', err);
     console.error('⚠️ ERROR CRÍTICO: No se pudo conectar a la BD. Revisa las variables en Railway.');
+    dbStatus = 'Error de conexión ❌: ' + err.message;
     // process.exit(1); // COMENTADO: Para que el servidor siga vivo y podamos probar la URL
   }
   console.log('Connected to MySQL database');
+  dbStatus = 'Conectada 🟢';
 });
 
 // ==========================================
@@ -779,7 +783,15 @@ app.post('/panic', async (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  res.send('API funcionando');
+  res.json({
+    mensaje: 'API Supervisor funcionando',
+    base_de_datos: dbStatus,
+    diagnostico_variables: {
+      host: process.env.DB_HOST || process.env.MYSQLHOST ? 'OK' : 'Falta',
+      user: process.env.DB_USER || process.env.MYSQLUSER ? 'OK' : 'Falta',
+      db: process.env.DB_NAME || process.env.MYSQLDATABASE ? 'OK' : 'Falta'
+    }
+  });
 });
 
 const port = process.env.PORT || 3001;

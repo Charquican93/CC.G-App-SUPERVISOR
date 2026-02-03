@@ -1,0 +1,8 @@
+{
+  "name": "GuardPro Mobile - Control de Vigilancia",
+  "description": "Una aplicación móvil avanzada para guardias de seguridad que permite el control de turnos, escaneo de puntos de control, rondas de vigilancia y botón de pánico integrado.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}

@@ -88,6 +88,16 @@ export default function Dashboard() {
     try {
       // Cargar Guardias
       const guardiasRes = await fetch(`${API_URL}/supervisor/guardias`);
+      
+      // --- BLOQUE DE DEPURACIÓN ---
+      const contentType = guardiasRes.headers.get("content-type");
+      if (contentType && contentType.indexOf("application/json") === -1) {
+        const text = await guardiasRes.text();
+        console.error("⚠️ ERROR CRÍTICO: El servidor devolvió HTML en lugar de JSON:", text.substring(0, 500));
+        throw new Error("El servidor está devolviendo una página de error (HTML). Revisa los logs de Railway.");
+      }
+      // ----------------------------
+
       const guardiasData = await guardiasRes.json();
       if (guardiasRes.ok) {
         setGuardias(guardiasData);
@@ -103,6 +113,7 @@ export default function Dashboard() {
       }
     } catch (error) {
       console.error('Error de red:', error);
+      Alert.alert('Error de Conexión', 'El servidor no responde correctamente. Revisa la consola para ver el error.');
     } finally {
       setLoading(false);
       setRefreshing(false);

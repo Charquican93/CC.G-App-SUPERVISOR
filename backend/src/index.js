@@ -27,7 +27,8 @@ const db = mysql.createConnection({
 db.connect((err) => {
   if (err) {
     console.error('Error connecting to MySQL:', err);
-    process.exit(1);
+    console.error('⚠️ ERROR CRÍTICO: No se pudo conectar a la BD. Revisa las variables en Railway.');
+    // process.exit(1); // COMENTADO: Para que el servidor siga vivo y podamos probar la URL
   }
   console.log('Connected to MySQL database');
 });

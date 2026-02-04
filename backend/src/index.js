@@ -94,42 +94,48 @@ app.get('/supervisor/guardias', async (req, res) => {
         ultimaUbicacion = { latitud: c.latitud, longitud: c.longitud, fecha: c.created_at || c.fecha || c.timestamp || c.fecha_hora };
       }
 
-      // B. Progreso de Ronda (si está activo)
+      // B. Progreso de Ronda (Buscar activa o pendiente para asociar puesto)
       let progreso = null;
-      if (g.activo) {
-        // Buscar ronda activa (En Progreso) o Pendiente (Por cumplir)
-        const [rondas] = await db.promise().query(
-          `SELECT id_ronda, id_ruta, estado FROM rondas WHERE id_guardia = ? AND estado IN ('EN_PROGRESO', 'PENDIENTE') 
-           ORDER BY CASE WHEN estado = 'EN_PROGRESO' THEN 1 ELSE 2 END, id_ronda ASC LIMIT 1`,
-          [g.id_guardia]
-        );
+      let id_puesto_ronda = null;
 
-        if (rondas.length > 0) {
-          const ronda = rondas[0];
-          // Contar puntos totales vs marcados
-          const [totalRes] = await db.promise().query('SELECT COUNT(*) as total FROM puntos_control WHERE id_ruta = ?', [ronda.id_ruta]);
-          const [marcadosRes] = await db.promise().query('SELECT COUNT(DISTINCT id_punto) as marcados FROM marcajes_puntos WHERE id_ronda = ?', [ronda.id_ronda]);
-          
-          const total = totalRes[0].total;
-          const marcados = marcadosRes[0].marcados;
-          const porcentaje = total > 0 ? Math.round((marcados / total) * 100) : 0;
+      // Buscamos rondas asignadas (incluso si el guardia no ha marcado activo aún)
+      const [rondas] = await db.promise().query(
+        `SELECT r.id_ronda, r.id_ruta, r.estado, ru.id_puesto 
+          FROM rondas r
+          LEFT JOIN rutas ru ON r.id_ruta = ru.id_ruta
+          WHERE r.id_guardia = ? AND r.estado IN ('EN_PROGRESO', 'PENDIENTE', 'CREADA', 'PROGRAMADA') 
+          ORDER BY CASE WHEN r.estado = 'EN_PROGRESO' THEN 1 ELSE 2 END, r.id_ronda ASC LIMIT 1`,
+        [g.id_guardia]
+      );
 
-          let texto = `${marcados}/${total} puntos`;
-          if (ronda.estado === 'PENDIENTE') {
-            texto = `Por iniciar (${total} ptos)`;
-          }
+      if (rondas.length > 0) {
+        const ronda = rondas[0];
+        id_puesto_ronda = ronda.id_puesto; // Capturamos el puesto de la ronda
 
-          progreso = {
-            texto: texto,
-            porcentaje: porcentaje,
-            id_ronda: ronda.id_ronda,
-            estado: ronda.estado
-          };
+        // Contar puntos totales vs marcados
+        const [totalRes] = await db.promise().query('SELECT COUNT(*) as total FROM puntos_control WHERE id_ruta = ?', [ronda.id_ruta]);
+        const [marcadosRes] = await db.promise().query('SELECT COUNT(DISTINCT id_punto) as marcados FROM marcajes_puntos WHERE id_ronda = ?', [ronda.id_ronda]);
+        
+        const total = totalRes[0].total;
+        const marcados = marcadosRes[0].marcados;
+        const porcentaje = total > 0 ? Math.round((marcados / total) * 100) : 0;
+
+        let texto = `${marcados}/${total} puntos`;
+        if (['PENDIENTE', 'CREADA', 'PROGRAMADA'].includes(ronda.estado)) {
+          texto = `Por iniciar (${total} ptos)`;
         }
+
+        progreso = {
+          texto: texto,
+          porcentaje: porcentaje,
+          id_ronda: ronda.id_ronda,
+          estado: ronda.estado
+        };
       }
 
       return {
         ...g,
+        id_puesto: id_puesto_ronda || g.id_puesto, // Prioridad: Puesto de la ronda > Puesto del turno
         ultimaUbicacion,
         progreso: progreso || { texto: "Sin ronda activa", porcentaje: 0 }
       };

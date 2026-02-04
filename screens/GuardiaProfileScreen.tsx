@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, TextInput, Modal } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, TextInput, Modal, ActivityIndicator } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
@@ -11,6 +11,19 @@ export default function GuardiaProfileScreen() {
   const { guardia } = route.params || {};
   const [showNotifModal, setShowNotifModal] = useState(false);
   const [notifMessage, setNotifMessage] = useState('');
+  const [rondaPoints, setRondaPoints] = useState<any[]>([]);
+  const [loadingPoints, setLoadingPoints] = useState(false);
+
+  useEffect(() => {
+    if (guardia?.progreso?.id_ronda) {
+      setLoadingPoints(true);
+      fetch(`${API_URL}/rondas/${guardia.progreso.id_ronda}/puntos`)
+        .then(res => res.json())
+        .then(data => setRondaPoints(data))
+        .catch(err => console.error("Error fetching points", err))
+        .finally(() => setLoadingPoints(false));
+    }
+  }, [guardia]);
 
   if (!guardia) {
       return (
@@ -115,6 +128,37 @@ export default function GuardiaProfileScreen() {
               : 'Sin registros recientes'}
           </Text>
         </View>
+
+        {/* Detalle de Ronda (Puntos de Control) */}
+        {guardia.progreso && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Ronda Asignada</Text>
+            <View style={{flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10}}>
+                <Text style={styles.rondaStatusText}>Estado: <Text style={{fontWeight: 'bold'}}>{guardia.progreso.estado}</Text></Text>
+                <Text style={styles.rondaStatusText}>{guardia.progreso.texto}</Text>
+            </View>
+            
+            {loadingPoints ? (
+              <ActivityIndicator size="small" color="#3B82F6" style={{marginVertical: 20}} />
+            ) : (
+              rondaPoints.map((punto, index) => (
+                <View key={index} style={styles.pointItem}>
+                  <MaterialIcons 
+                    name={punto.marcado ? "check-circle" : "radio-button-unchecked"} 
+                    size={24} 
+                    color={punto.marcado ? "#10B981" : "#CBD5E1"} 
+                  />
+                  <View style={{marginLeft: 12, flex: 1}}>
+                    <Text style={[styles.pointName, punto.marcado && {color: '#166534'}]}>{punto.nombre}</Text>
+                    <Text style={styles.pointTime}>
+                      {punto.marcado ? `Marcado: ${new Date(punto.hora_marcaje).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : 'Pendiente'}
+                    </Text>
+                  </View>
+                </View>
+              ))
+            )}
+          </View>
+        )}
       </ScrollView>
 
       {/* Modal Notificación */}
@@ -173,5 +217,10 @@ const styles = StyleSheet.create({
   cancelBtn: { backgroundColor: '#F1F5F9' },
   confirmBtn: { backgroundColor: '#3B82F6' },
   cancelText: { color: '#64748B', fontWeight: 'bold' },
-  confirmText: { color: '#FFF', fontWeight: 'bold' }
+  confirmText: { color: '#FFF', fontWeight: 'bold' },
+
+  rondaStatusText: { fontSize: 14, color: '#64748B' },
+  pointItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, backgroundColor: '#FFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' },
+  pointName: { fontSize: 14, fontWeight: '600', color: '#334155' },
+  pointTime: { fontSize: 12, color: '#94A3B8' },
 });

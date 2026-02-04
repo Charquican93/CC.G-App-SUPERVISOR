@@ -9,7 +9,8 @@ import {
   Modal, 
   TextInput, 
   RefreshControl,
-  ActivityIndicator
+  ActivityIndicator,
+  ScrollView
 } from 'react-native';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -79,9 +80,10 @@ export default function Dashboard() {
   const [selectedGuardia, setSelectedGuardia] = useState<Guardia | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showNotifModal, setShowNotifModal] = useState(false);
-  const [selectedPuesto, setSelectedPuesto] = useState<Puesto | null>(null);
-  const [showPuestoModal, setShowPuestoModal] = useState(false);
+  const [activeFilterPuestoId, setActiveFilterPuestoId] = useState<number | null>(null);
   const [notifMessage, setNotifMessage] = useState('');
+  const [rondaPoints, setRondaPoints] = useState<any[]>([]);
+  const [loadingPoints, setLoadingPoints] = useState(false);
 
   // Cargar lista de guardias
   const fetchData = async () => {
@@ -164,19 +166,40 @@ export default function Dashboard() {
     }
   };
 
+  const handleOpenGuardiaModal = async (guardia: Guardia) => {
+    setSelectedGuardia(guardia);
+    setShowProfileModal(true);
+    setRondaPoints([]); // Limpiar puntos anteriores
+    
+    if (guardia.progreso?.id_ronda) {
+      setLoadingPoints(true);
+      try {
+        const res = await fetch(`${API_URL}/rondas/${guardia.progreso.id_ronda}/puntos`);
+        if (res.ok) {
+          const data = await res.json();
+          setRondaPoints(data);
+        }
+      } catch (e) {
+        console.error("Error fetching points", e);
+      } finally {
+        setLoadingPoints(false);
+      }
+    }
+  };
+
   const renderGuardiaItem = ({ item }: { item: Guardia }) => {
     const isActive = item.activo === 1;
     // Determinar color según estado de la ronda
     let progressColor = '#3B82F6'; // Azul por defecto (En Progreso)
     if (item.progreso) {
-      if (item.progreso.estado === 'PENDIENTE') progressColor = '#F59E0B'; // Naranja (Por cumplir)
+      if (['PENDIENTE', 'CREADA', 'PROGRAMADA'].includes(item.progreso.estado || '')) progressColor = '#F59E0B'; // Naranja (Por cumplir)
       else if (item.progreso.porcentaje >= 100) progressColor = '#10B981'; // Verde (Completado)
     }
     
     return (
       <TouchableOpacity 
         style={styles.card} 
-        onPress={() => { setSelectedGuardia(item); setShowProfileModal(true); }}
+        onPress={() => handleOpenGuardiaModal(item)}
       >
         <View style={styles.cardHeader}>
           <View style={styles.avatarContainer}>
@@ -208,13 +231,13 @@ export default function Dashboard() {
           <View style={styles.statItem}>
             <Text style={styles.statLabel}>RONDA ACTUAL</Text>
             <TouchableOpacity 
-              disabled={!isActive || !item.progreso}
+              disabled={!item.progreso}
               onPress={() => navigation.navigate('RoundDetailScreen', { rondaId: item.progreso?.id_ronda, guardiaNombre: `${item.nombre} ${item.apellido}` })}
             >
               <Text style={styles.progressText}>
-                {isActive ? (item.progreso?.texto || 'Sin ronda') : '-'}
+                {item.progreso?.texto || (isActive ? 'Sin ronda' : '-')}
               </Text>
-              {isActive && item.progreso && (
+              {item.progreso && (
                 <View style={styles.progressBarBg}>
                   <View 
                     style={[
@@ -231,6 +254,11 @@ export default function Dashboard() {
     );
   };
 
+  // Filtrar guardias según el puesto seleccionado
+  const filteredGuardias = activeFilterPuestoId 
+    ? guardias.filter(g => g.id_puesto === activeFilterPuestoId)
+    : guardias;
+
   return (
     <View style={styles.container}>
       {/* Header Supervisor */}
@@ -240,64 +268,76 @@ export default function Dashboard() {
           <Text style={styles.headerSubtitle}>Hola, {supervisor.nombre} {supervisor.apellido}</Text>
         </View>
         <View style={{flexDirection: 'row', gap: 10}}>
-          <TouchableOpacity onPress={() => navigation.navigate('MapScreen')} style={styles.logoutButton}>
-            <MaterialIcons name="map" size={24} color="#FFF" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => navigation.navigate('HistoryScreen')} style={styles.logoutButton}>
-            <MaterialIcons name="history" size={24} color="#FFF" />
-          </TouchableOpacity>
           <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
             <MaterialIcons name="logout" size={24} color="#EF4444" />
           </TouchableOpacity>
         </View>
       </View>
 
+      {/* Sección Fija: Puestos de Guardia */}
+      <View style={styles.fixedHeaderContainer}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Puestos de Guardia</Text>
+        </View>
+        <FlatList
+          data={puestos}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 10 }}
+          keyExtractor={(item) => item.id_puesto.toString()}
+          renderItem={({ item }) => {
+            const isSelected = activeFilterPuestoId === item.id_puesto;
+            return (
+            <TouchableOpacity 
+              style={[styles.puestoChip, isSelected && styles.puestoChipSelected]}
+              onPress={() => setActiveFilterPuestoId(isSelected ? null : item.id_puesto)}
+            >
+              <Text style={[styles.puestoChipText, isSelected && styles.puestoChipTextSelected]}>
+                {item.puesto}
+              </Text>
+            </TouchableOpacity>
+          )}}
+        />
+      </View>
+
       {/* Lista de Guardias */}
       <FlatList
-        data={guardias}
+        style={{flex: 1}}
+        data={filteredGuardias}
         renderItem={renderGuardiaItem}
         keyExtractor={(item) => item.id_guardia.toString()}
         contentContainerStyle={styles.listContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         ListHeaderComponent={
-          <>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Puestos de Control</Text>
-            </View>
-            <FlatList
-              data={puestos}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 16 }}
-              keyExtractor={(item) => item.id_puesto.toString()}
-              renderItem={({ item }) => (
-                <TouchableOpacity 
-                  style={styles.puestoCard}
-                  onPress={() => { setSelectedPuesto(item); setShowPuestoModal(true); }}
-                >
-                  <View style={styles.puestoIconBg}>
-                    <MaterialIcons name="business" size={24} color="#3B82F6" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.puestoName} numberOfLines={1}>{item.puesto}</Text>
-                    <Text style={styles.puestoInfo} numberOfLines={1}>{item.instalaciones}</Text>
-                  </View>
-                </TouchableOpacity>
-              )}
-            />
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Personal de Guardia</Text>
-            </View>
-          </>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Personal de Guardia</Text>
+          </View>
         }
         ListEmptyComponent={
           !loading ? (
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No hay guardias registrados</Text>
+              <Text style={styles.emptyText}>{activeFilterPuestoId ? 'No hay guardias en este puesto' : 'No hay guardias registrados'}</Text>
             </View>
           ) : <ActivityIndicator size="large" color="#3B82F6" style={{ marginTop: 50 }} />
         }
       />
+
+      {/* Navegación Inferior con Tarjetas */}
+      <View style={styles.bottomNavContainer}>
+        <TouchableOpacity 
+          style={styles.bottomNavCard} 
+          onPress={() => navigation.navigate('MapScreen')}
+        >
+          <MaterialIcons name="map" size={32} color="#3B82F6" />
+          <Text style={styles.bottomNavText}>Mapa General</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.bottomNavCard} 
+          onPress={() => navigation.navigate('HistoryScreen')}>
+          <MaterialIcons name="history" size={32} color="#3B82F6" />
+          <Text style={styles.bottomNavText}>Eventos</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Modal Perfil Guardia */}
       <Modal
@@ -317,6 +357,7 @@ export default function Dashboard() {
                   </TouchableOpacity>
                 </View>
 
+                <ScrollView showsVerticalScrollIndicator={false}>
                 <View style={styles.profileInfo}>
                   <View style={styles.largeAvatar}>
                     <Text style={styles.largeAvatarText}>
@@ -373,47 +414,40 @@ export default function Dashboard() {
                       : 'No hay registros recientes'}
                   </Text>
                 </View>
+
+                {/* Detalle de Ronda (Puntos de Control) */}
+                {selectedGuardia.progreso && (
+                  <View style={styles.rondaDetailsContainer}>
+                    <Text style={styles.modalSectionTitle}>Ronda Asignada</Text>
+                    <View style={{flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10}}>
+                        <Text style={styles.rondaStatusText}>Estado: <Text style={{fontWeight: 'bold'}}>{selectedGuardia.progreso.estado}</Text></Text>
+                        <Text style={styles.rondaStatusText}>{selectedGuardia.progreso.texto}</Text>
+                    </View>
+                    
+                    {loadingPoints ? (
+                      <ActivityIndicator size="small" color="#3B82F6" style={{marginVertical: 20}} />
+                    ) : (
+                      rondaPoints.map((punto, index) => (
+                        <View key={index} style={styles.pointItem}>
+                          <MaterialIcons 
+                            name={punto.marcado ? "check-circle" : "radio-button-unchecked"} 
+                            size={24} 
+                            color={punto.marcado ? "#10B981" : "#CBD5E1"} 
+                          />
+                          <View style={{marginLeft: 12, flex: 1}}>
+                            <Text style={[styles.pointName, punto.marcado && {color: '#166534'}]}>{punto.nombre}</Text>
+                            <Text style={styles.pointTime}>
+                              {punto.marcado ? `Marcado: ${new Date(punto.hora_marcaje).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : 'Pendiente'}
+                            </Text>
+                          </View>
+                        </View>
+                      ))
+                    )}
+                  </View>
+                )}
+                </ScrollView>
               </>
             )}
-          </View>
-        </View>
-      </Modal>
-
-      {/* Modal Detalle Puesto (Guardias Asignados) */}
-      <Modal
-        visible={showPuestoModal}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowPuestoModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <View>
-                <Text style={styles.modalTitle}>{selectedPuesto?.puesto}</Text>
-                <Text style={styles.modalSubtitle}>{selectedPuesto?.instalaciones}</Text>
-              </View>
-              <TouchableOpacity onPress={() => setShowPuestoModal(false)}>
-                <MaterialIcons name="close" size={24} color="#64748B" />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.modalSectionTitle}>Guardias en Turno</Text>
-
-            <FlatList
-              data={guardias.filter(g => g.id_puesto === selectedPuesto?.id_puesto && g.activo === 1)}
-              keyExtractor={(item) => item.id_guardia.toString()}
-              renderItem={renderGuardiaItem}
-              ListEmptyComponent={
-                <View style={styles.emptyContainer}>
-                  <MaterialIcons name="person-off" size={48} color="#E2E8F0" />
-                  <Text style={[styles.emptyText, { marginTop: 10 }]}>
-                    No hay guardias activos en este puesto actualmente.
-                  </Text>
-                </View>
-              }
-              contentContainerStyle={{ paddingBottom: 20 }}
-            />
           </View>
         </View>
       </Modal>
@@ -461,12 +495,33 @@ export default function Dashboard() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8FAFC' },
+  container: { flex: 1, backgroundColor: '#EEF2F6' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' },
   errorText: { color: 'red', fontSize: 16, marginBottom: 20 },
   retryButton: { padding: 10, backgroundColor: '#3B82F6', borderRadius: 8 },
   retryText: { color: '#fff', fontWeight: 'bold' },
   
+  bottomNavContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  bottomNavCard: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+    marginHorizontal: 6,
+    elevation: 2,
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }
+  },
+  bottomNavText: { marginTop: 8, fontSize: 14, fontWeight: '600', color: '#1E293B' },
+
   header: {
     backgroundColor: '#1E293B',
     paddingTop: 50,
@@ -481,25 +536,29 @@ const styles = StyleSheet.create({
   headerTitle: { color: '#94A3B8', fontSize: 12, fontWeight: 'bold', textTransform: 'uppercase' },
   headerSubtitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
   logoutButton: { padding: 8, backgroundColor: '#334155', borderRadius: 10 },
+
+  fixedHeaderContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    backgroundColor: '#EEF2F6',
+  },
   
   listContent: { padding: 16 },
   sectionHeader: { marginBottom: 12, marginTop: 4 },
   sectionTitle: { fontSize: 12, fontWeight: 'bold', color: '#94A3B8', textTransform: 'uppercase' },
   
-  puestoCard: {
+  puestoChip: {
     backgroundColor: '#FFF',
-    borderRadius: 16,
-    padding: 12,
-    marginRight: 12,
-    width: 220,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5, elevation: 2
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
-  puestoIconBg: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center' },
-  puestoName: { fontSize: 14, fontWeight: 'bold', color: '#1E293B' },
-  puestoInfo: { fontSize: 12, color: '#64748B' },
+  puestoChipSelected: { backgroundColor: '#3B82F6', borderColor: '#3B82F6' },
+  puestoChipText: { fontSize: 14, fontWeight: '600', color: '#64748B' },
+  puestoChipTextSelected: { color: '#FFF' },
 
   card: {
     backgroundColor: '#FFF',
@@ -572,6 +631,13 @@ const styles = StyleSheet.create({
   actionButtonText: { color: '#FFF', fontWeight: 'bold', fontSize: 14 },
 
   lastActivity: { backgroundColor: '#F8FAFC', padding: 16, borderRadius: 12 },
+  
+  rondaDetailsContainer: { marginTop: 24, paddingBottom: 20 },
+  rondaStatusText: { fontSize: 14, color: '#64748B' },
+  pointItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, backgroundColor: '#F8FAFC', padding: 12, borderRadius: 8 },
+  pointName: { fontSize: 14, fontWeight: '600', color: '#334155' },
+  pointTime: { fontSize: 12, color: '#94A3B8' },
+
   modalSectionTitle: { fontSize: 12, fontWeight: 'bold', color: '#94A3B8', marginBottom: 8, textTransform: 'uppercase' },
   activityText: { fontSize: 14, color: '#334155' },
 

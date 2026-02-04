@@ -132,7 +132,7 @@ export default function HistoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8FAFC' },
+  container: { flex: 1, backgroundColor: '#EEF2F6' },
   header: {
     backgroundColor: '#1E293B', padding: 20, paddingTop: 50,
     flexDirection: 'row', alignItems: 'center', gap: 15

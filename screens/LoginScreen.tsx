@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { API_URL } from '../config';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function LoginScreen() {
   const navigation = useNavigation<any>();
@@ -55,6 +56,8 @@ export default function LoginScreen() {
       const data = await response.json();
 
       if (response.ok && data.success) {
+        // Guardar sesión
+        await AsyncStorage.setItem('userSession', JSON.stringify(data.supervisor));
         // Login exitoso, pasamos los datos del supervisor al Dashboard
         navigation.replace('Dashboard', { supervisor: data.supervisor });
       } else {

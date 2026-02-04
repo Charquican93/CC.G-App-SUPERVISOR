@@ -22,7 +22,9 @@ const db = mysql.createPool({
   port: process.env.DB_PORT || process.env.MYSQLPORT || 3306,
   waitForConnections: true,
   connectionLimit: 10,
-  queueLimit: 0
+  queueLimit: 0,
+  connectTimeout: 10000, // 10s timeout para no dejar colgado el servidor
+  ssl: { rejectUnauthorized: false } // Vital para conexiones estables en Railway/Nube
 });
 
 let dbStatus = 'Desconectada 🔴';
@@ -57,7 +59,7 @@ app.post('/supervisor/login', async (req, res) => {
     // 1. Buscamos por RUT primero (limpiando espacios)
     const [rows] = await db.promise().query(
       'SELECT * FROM supervisores WHERE rut = ?', 
-      [rut.trim()]
+      [String(rut).trim()] // Convertimos a String para evitar crash si llega un número
     );
 
     if (rows.length === 0) {

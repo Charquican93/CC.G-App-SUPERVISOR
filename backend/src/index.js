@@ -14,24 +14,29 @@ app.use((req, res, next) => {
   next();
 });
 
-const db = mysql.createConnection({
+const db = mysql.createPool({
   host: process.env.DB_HOST || process.env.MYSQLHOST,
   user: process.env.DB_USER || process.env.MYSQLUSER,
   password: process.env.DB_PASSWORD || process.env.MYSQLPASSWORD,
   database: process.env.DB_NAME || process.env.MYSQLDATABASE,
-  port: process.env.DB_PORT || process.env.MYSQLPORT || 3306
+  port: process.env.DB_PORT || process.env.MYSQLPORT || 3306,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
 });
 
 let dbStatus = 'Desconectada 🔴';
 
-db.connect((err) => {
+db.getConnection((err, connection) => {
   if (err) {
     console.error('Error connecting to MySQL:', err);
     console.error('⚠️ ERROR CRÍTICO: No se pudo conectar a la BD. Revisa las variables en Railway.');
     dbStatus = 'Error de conexión ❌: ' + err.message;
+  } else {
+    console.log('Connected to MySQL database (Pool)');
+    dbStatus = 'Conectada 🟢';
+    connection.release();
   }
-  console.log('Connected to MySQL database');
-  dbStatus = 'Conectada 🟢';
 });
 
 // ==========================================

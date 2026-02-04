@@ -45,25 +45,42 @@ db.getConnection((err, connection) => {
 
 // 1. Login de Supervisor
 app.post('/supervisor/login', async (req, res) => {
-  const { rut, password } = req.body; // O usuario/password según tu tabla
+  const { rut, password } = req.body;
   
+  console.log(`[LOGIN INTENTO] RUT: '${rut}'`); // Log para depurar en Railway
+
   if (!rut || !password) {
     return res.status(400).json({ error: 'Faltan credenciales' });
   }
 
   try {
-    // Tabla 'supervisores' con columnas: id_supervisor, rut, contrasena, nombre...
+    // 1. Buscamos por RUT primero (limpiando espacios)
     const [rows] = await db.promise().query(
-      'SELECT * FROM supervisores WHERE rut = ? AND contrasena = ?', 
-      [rut, password]
+      'SELECT * FROM supervisores WHERE rut = ?', 
+      [rut.trim()]
     );
 
     if (rows.length === 0) {
-      return res.status(401).json({ error: 'Credenciales inválidas' });
+      console.log('[LOGIN ERROR] RUT no encontrado en BD');
+      return res.status(401).json({ error: 'Usuario no encontrado' });
     }
 
     const supervisor = rows[0];
-    delete supervisor.contrasena; // No devolver password
+    
+    // 2. Verificamos contraseña (soportando nombres comunes de columna)
+    // Esto ayuda si en Railway la columna se llama 'password' en vez de 'contrasena'
+    const dbPassword = supervisor.contrasena || supervisor.password || supervisor.clave;
+
+    if (String(dbPassword) !== String(password).trim()) {
+      console.log(`[LOGIN ERROR] Contraseña incorrecta. BD tiene: '${dbPassword}', Recibido: '${password}'`);
+      return res.status(401).json({ error: 'Contraseña incorrecta' });
+    }
+
+    console.log('[LOGIN ÉXITO] Acceso concedido a:', supervisor.nombre);
+
+    // Limpiar datos sensibles
+    if (supervisor.contrasena) delete supervisor.contrasena;
+    if (supervisor.password) delete supervisor.password;
     
     res.json({ success: true, supervisor });
   } catch (err) {

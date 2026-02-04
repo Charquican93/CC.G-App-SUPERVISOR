@@ -8,12 +8,12 @@ import {
   Alert, 
   Modal, 
   TextInput, 
-  Linking, 
   RefreshControl,
   ActivityIndicator
 } from 'react-native';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { API_URL } from '../config';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -55,8 +55,8 @@ interface Guardia {
 export default function Dashboard() {
   const navigation = useNavigation<any>();
   const route = useRoute();
-  // @ts-ignore
-  const supervisor: Supervisor = route.params?.supervisor;
+  const params = route.params as { supervisor: Supervisor } | undefined;
+  const supervisor = params?.supervisor;
 
   // Si no hay supervisor, mostrar error o redirigir
   if (!supervisor) {
@@ -89,14 +89,12 @@ export default function Dashboard() {
       // Cargar Guardias
       const guardiasRes = await fetch(`${API_URL}/supervisor/guardias`);
       
-      // --- BLOQUE DE DEPURACIÓN ---
+      // Verificación de seguridad: asegurar que la respuesta es JSON
       const contentType = guardiasRes.headers.get("content-type");
       if (contentType && contentType.indexOf("application/json") === -1) {
         const text = await guardiasRes.text();
-        console.error("⚠️ ERROR CRÍTICO: El servidor devolvió HTML en lugar de JSON:", text.substring(0, 500));
-        throw new Error("El servidor está devolviendo una página de error (HTML). Revisa los logs de Railway.");
+        throw new Error(`Respuesta inválida del servidor (HTML): ${text.substring(0, 100)}...`);
       }
-      // ----------------------------
 
       const guardiasData = await guardiasRes.json();
       if (guardiasRes.ok) {
@@ -139,11 +137,6 @@ export default function Dashboard() {
   const handleLogout = async () => {
     await AsyncStorage.removeItem('userSession');
     navigation.replace('Login');
-  };
-
-  const handleOpenMap = (lat: number, lon: number) => {
-    const url = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
-    Linking.openURL(url);
   };
 
   const handleSendNotification = async () => {
@@ -214,19 +207,24 @@ export default function Dashboard() {
 
           <View style={styles.statItem}>
             <Text style={styles.statLabel}>RONDA ACTUAL</Text>
-            <Text style={styles.progressText}>
-              {isActive ? (item.progreso?.texto || 'Sin ronda') : '-'}
-            </Text>
-            {isActive && item.progreso && (
-              <View style={styles.progressBarBg}>
-                <View 
-                  style={[
-                    styles.progressBarFill, 
-                    { width: `${item.progreso.porcentaje}%`, backgroundColor: progressColor }
-                  ]} 
-                />
-              </View>
-            )}
+            <TouchableOpacity 
+              disabled={!isActive || !item.progreso}
+              onPress={() => navigation.navigate('RoundDetailScreen', { rondaId: item.progreso?.id_ronda, guardiaNombre: `${item.nombre} ${item.apellido}` })}
+            >
+              <Text style={styles.progressText}>
+                {isActive ? (item.progreso?.texto || 'Sin ronda') : '-'}
+              </Text>
+              {isActive && item.progreso && (
+                <View style={styles.progressBarBg}>
+                  <View 
+                    style={[
+                      styles.progressBarFill, 
+                      { width: `${item.progreso.porcentaje}%`, backgroundColor: progressColor }
+                    ]} 
+                  />
+                </View>
+              )}
+            </TouchableOpacity>
           </View>
         </View>
       </TouchableOpacity>
@@ -241,9 +239,17 @@ export default function Dashboard() {
           <Text style={styles.headerTitle}>Panel de Control</Text>
           <Text style={styles.headerSubtitle}>Hola, {supervisor.nombre} {supervisor.apellido}</Text>
         </View>
-        <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
-          <MaterialIcons name="logout" size={24} color="#EF4444" />
-        </TouchableOpacity>
+        <View style={{flexDirection: 'row', gap: 10}}>
+          <TouchableOpacity onPress={() => navigation.navigate('MapScreen')} style={styles.logoutButton}>
+            <MaterialIcons name="map" size={24} color="#FFF" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => navigation.navigate('HistoryScreen')} style={styles.logoutButton}>
+            <MaterialIcons name="history" size={24} color="#FFF" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
+            <MaterialIcons name="logout" size={24} color="#EF4444" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Lista de Guardias */}
@@ -321,29 +327,43 @@ export default function Dashboard() {
                   <Text style={styles.profileRut}>{selectedGuardia.rut}</Text>
                 </View>
 
-                <View style={styles.actionButtons}>
-                  <TouchableOpacity 
-                    style={[styles.actionButton, { backgroundColor: '#3B82F6' }]}
-                    onPress={() => {
-                      if (selectedGuardia.ultimaUbicacion) {
-                        handleOpenMap(selectedGuardia.ultimaUbicacion.latitud, selectedGuardia.ultimaUbicacion.longitud);
-                      } else {
-                        Alert.alert('Sin ubicación', 'Este guardia no ha registrado ubicación reciente.');
-                      }
-                    }}
-                  >
-                    <MaterialIcons name="map" size={20} color="#FFF" />
-                    <Text style={styles.actionButtonText}>Ver Ubicación</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity 
-                    style={[styles.actionButton, { backgroundColor: '#F59E0B' }]}
-                    onPress={() => { setShowProfileModal(false); setShowNotifModal(true); }}
-                  >
-                    <MaterialIcons name="notifications" size={20} color="#FFF" />
-                    <Text style={styles.actionButtonText}>Notificar</Text>
-                  </TouchableOpacity>
+                {/* MINIMAPA SATELITAL */}
+                <View style={styles.miniMapContainer}>
+                  {selectedGuardia.ultimaUbicacion ? (
+                    <MapView
+                      style={styles.miniMap}
+                      provider={PROVIDER_GOOGLE}
+                      mapType="hybrid" // Vista Satélite
+                      initialRegion={{
+                        latitude: parseFloat(selectedGuardia.ultimaUbicacion.latitud as any),
+                        longitude: parseFloat(selectedGuardia.ultimaUbicacion.longitud as any),
+                        latitudeDelta: 0.002, // Zoom muy cercano para detalle
+                        longitudeDelta: 0.002,
+                      }}
+                    >
+                      <Marker
+                        coordinate={{
+                          latitude: parseFloat(selectedGuardia.ultimaUbicacion.latitud as any),
+                          longitude: parseFloat(selectedGuardia.ultimaUbicacion.longitud as any),
+                        }}
+                        title={selectedGuardia.nombre}
+                      />
+                    </MapView>
+                  ) : (
+                    <View style={styles.noMapContainer}>
+                      <MaterialIcons name="location-off" size={32} color="#94A3B8" />
+                      <Text style={styles.noMapText}>Sin ubicación reciente</Text>
+                    </View>
+                  )}
                 </View>
+
+                <TouchableOpacity 
+                  style={[styles.actionButton, { backgroundColor: '#F59E0B', marginBottom: 24 }]}
+                  onPress={() => { setShowProfileModal(false); setShowNotifModal(true); }}
+                >
+                  <MaterialIcons name="notifications" size={20} color="#FFF" />
+                  <Text style={styles.actionButtonText}>Enviar Notificación</Text>
+                </TouchableOpacity>
 
                 <View style={styles.lastActivity}>
                   <Text style={styles.modalSectionTitle}>Última Actividad</Text>
@@ -536,9 +556,17 @@ const styles = StyleSheet.create({
   profileName: { fontSize: 22, fontWeight: 'bold', color: '#1E293B' },
   profileRut: { fontSize: 14, color: '#64748B' },
 
-  actionButtons: { flexDirection: 'row', gap: 12, marginBottom: 24 },
+  miniMapContainer: { 
+    height: 200, width: '100%', borderRadius: 16, overflow: 'hidden', marginBottom: 16,
+    borderWidth: 1, borderColor: '#E2E8F0'
+  },
+  miniMap: { width: '100%', height: '100%' },
+  noMapContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F1F5F9' },
+  noMapText: { color: '#94A3B8', marginTop: 8, fontSize: 14 },
+
+  actionButtons: { flexDirection: 'row', gap: 12, marginBottom: 16 },
   actionButton: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     padding: 14, borderRadius: 12, gap: 8
   },
   actionButtonText: { color: '#FFF', fontWeight: 'bold', fontSize: 14 },

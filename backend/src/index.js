@@ -33,7 +33,7 @@ const db = mysql.createPool({
   connectionLimit: 10,
   queueLimit: 0,
   connectTimeout: 10000, // 10s timeout para no dejar colgado el servidor
-  ssl: { rejectUnauthorized: false } // Vital para conexiones estables en Railway/Nube
+  ssl: process.env.RAILWAY_ENVIRONMENT ? { rejectUnauthorized: false } : undefined
 });
 
 let dbStatus = 'Desconectada 🔴';

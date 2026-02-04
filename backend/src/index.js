@@ -4,6 +4,15 @@ require('dotenv').config();
 const mysql = require('mysql2');
 const cors = require('cors');
 
+// Manejo de errores globales para evitar que el servidor se apague por errores inesperados
+process.on('uncaughtException', (err) => {
+  console.error('🔥 Excepción no capturada (CRASH EVITADO):', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🔥 Promesa rechazada no manejada:', reason);
+});
+
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
